@@ -18,7 +18,7 @@ if [ -d "$LOG_DIR" ]; then
   done
 fi
 
-for port in 3000 8081 9090 9091; do
+for port in 18300 18100 18200 18210 18110 18400; do
   fuser -k "${port}/tcp" >/dev/null 2>&1 || true
 done
 

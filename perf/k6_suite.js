@@ -18,7 +18,7 @@ import { Counter, Rate, Trend } from "k6/metrics";
  */
 
 const profile = __ENV.PROFILE || "pilot_5_users";
-const baseUrl = __ENV.BASE_URL || "http://localhost:8080";
+const baseUrl = __ENV.BASE_URL || "http://localhost:18080";
 
 export const dashboardLatency = new Trend("pfm_dashboard_latency_ms", true);
 export const forecastGrpcLatency = new Trend("pfm_forecast_grpc_latency_ms", true);

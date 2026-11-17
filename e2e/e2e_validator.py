@@ -2,12 +2,12 @@
 """
 End-to-End (E2E) Automated Homologation Suite (UC-01 through UC-06)
 Executes real integration tests against the local cloud stack:
-- LocalStack S3/KMS (:4566)
-- PostgreSQL 16 Core Ledger RLS (:5432)
-- PostgreSQL 16 AI Rules RLS (:5433)
-- Apache Kafka KRaft (:9092)
-- Valkey / Redis 8.0 (:6379)
-- Envoy Edge Gateway (:8080) & pfm-ingestion-bff-go (:8081)
+- LocalStack S3/KMS (:14566)
+- PostgreSQL 16 Core Ledger RLS (:15432)
+- PostgreSQL 16 AI Rules RLS (:15433)
+- Apache Kafka KRaft (:19092)
+- Valkey / Redis 8.0 (:16379)
+- Envoy Edge Gateway (:18080) & pfm-ingestion-bff-go (:18100)
 - pfm-forecast-engine-go & pfm-ai-worker-python
 """
 
@@ -42,8 +42,8 @@ from src.domain.models import CategorizedTransaction, RawTransaction
 from src.domain.normalizer import MerchantNormalizer
 from src.domain.taxonomy import CategoryCode, CategoryGroup
 
-CORE_LEDGER_DSN = "postgresql://pfm_app_user:pfm_app_secret_2026@localhost:5432/pfm_core_ledger"
-AI_RULES_DSN = "postgresql://pfm_ai_user:pfm_ai_pass@localhost:5433/pfm_ai_rules"
+CORE_LEDGER_DSN = "postgresql://pfm_app_user:pfm_app_secret_2026@localhost:15432/pfm_core_ledger"
+AI_RULES_DSN = "postgresql://pfm_ai_user:pfm_ai_pass@localhost:15433/pfm_ai_rules"
 
 TENANT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 TENANT_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
@@ -74,7 +74,7 @@ class InMemoryEventCollector:
 
 def ensure_localstack_bucket() -> None:
     req = urllib.request.Request(
-        "http://localhost:4566/pfm-statements-encrypted-local",
+        "http://localhost:14566/pfm-statements-encrypted-local",
         method="PUT",
     )
     try:
@@ -376,7 +376,7 @@ def validate_uc05_three_layer_ai_pipeline_and_inbox() -> dict[str, Any]:
     UC-05:
     1. Normalizes `POSTO FREI DAMIAOACUBRA` -> city `Acu`, category `VAR_MOBILITY_FUEL` (`TRANSPORTE`/`COMBUSTIVEL_ETANOL_GASOLINA`).
     2. Tests Circuit Breaker fallback to `SYS_UNCLASSIFIED` when Gemini is unavailable.
-    3. Tests Inbox retroactive learning (`LearnFromInboxCorrectionUseCase`) against real PostgreSQL `pfm_ai_rules` (:5433) with RLS.
+    3. Tests Inbox retroactive learning (`LearnFromInboxCorrectionUseCase`) against real PostgreSQL `pfm_ai_rules` (:15433) with RLS.
     """
     t0 = time.perf_counter()
     repo = PostgresTenantRuleRepository(dsn=AI_RULES_DSN)
@@ -427,7 +427,7 @@ def validate_uc05_three_layer_ai_pipeline_and_inbox() -> dict[str, Any]:
     assert cat_unknown.category_code == CategoryCode.SYS_UNCLASSIFIED
     assert cat_unknown.requires_inbox_review is True
 
-    # 3. Inbox Correction -> saves rule in PostgreSQL `pfm_ai_rules:5433` and reclassifies retroactively via Layer 1
+    # 3. Inbox Correction -> saves rule in PostgreSQL `pfm_ai_rules:15433` and reclassifies retroactively via Layer 1
     learned_rule, reclassified = learn_uc.execute(
         tenant_id=TENANT_A,
         raw_description="JIM.COM* COMERCIO SERTAO LTDAACUBRA",
@@ -455,9 +455,9 @@ def validate_uc05_three_layer_ai_pipeline_and_inbox() -> dict[str, Any]:
 def validate_uc06_run_rate_redis_under_25ms_and_rls_isolation() -> dict[str, Any]:
     """
     UC-06:
-    1. Updates & reads back the tenant's Run-Rate projection in real Valkey/Redis (:6379) in < 25ms.
+    1. Updates & reads back the tenant's Run-Rate projection in real Valkey/Redis (:16379) in < 25ms.
     2. Verifies 'Limite != Orçamento' RED alert when commitments exceed regular net income.
-    3. Executes cross-tenant queries between Tenant_A and Tenant_B on PostgreSQL (:5432 and :5433)
+    3. Executes cross-tenant queries between Tenant_A and Tenant_B on PostgreSQL (:15432 and :15433)
        proving 0 rows leaked across tenants.
     """
     # 1. Measure real Valkey/Redis write + read via docker exec valkey-cli or TCP socket
@@ -476,7 +476,7 @@ def validate_uc06_run_rate_redis_under_25ms_and_rls_isolation() -> dict[str, Any
         }
     )
     redis_key = f"pfm:forecast:{TENANT_A}:2026-11"
-    with socket.create_connection(("localhost", 6379), timeout=0.5) as sock:
+    with socket.create_connection(("localhost", 16379), timeout=0.5) as sock:
         set_cmd = (
             f"*3\r\n$3\r\nSET\r\n${len(redis_key)}\r\n{redis_key}\r\n"
             f"${len(snapshot_json)}\r\n{snapshot_json}\r\n"
@@ -529,12 +529,12 @@ def main() -> None:
     ensure_localstack_bucket()
     seed_tenants_and_cards()
 
-    # Start pfm-ingestion-bff-go on port 8081 for real HTTP/Envoy E2E validation
+    # Start pfm-ingestion-bff-go on port 18100 for real HTTP/Envoy E2E validation
     bff_dir = WORKSPACE_ROOT / "pfm-ingestion-bff-go"
     env = os.environ.copy()
-    env["PORT"] = "8081"
-    env["LOCALSTACK_ENDPOINT"] = "http://localhost:4566"
-    env["KAFKA_BROKERS"] = "localhost:9092"
+    env["SERVER_PORT"] = "18100"
+    env["AWS_ENDPOINT_URL"] = "http://localhost:14566"
+    env["KAFKA_BROKERS"] = "localhost:19092"
 
     bff_proc = subprocess.Popen(
         ["go", "run", "./cmd/server"],
@@ -549,27 +549,27 @@ def main() -> None:
         bff_ready = False
         for _ in range(30):
             try:
-                with urllib.request.urlopen("http://localhost:8081/health", timeout=1) as r:
+                with urllib.request.urlopen("http://localhost:18100/health", timeout=1) as r:
                     if r.status == 200:
                         bff_ready = True
                         break
             except Exception:
                 time.sleep(0.2)
         if not bff_ready:
-            raise RuntimeError("pfm-ingestion-bff-go did not become ready on :8081")
+            raise RuntimeError("pfm-ingestion-bff-go did not become ready on :18100")
 
-        # Route via Envoy Gateway (:8080 -> :8081) if reachable, or directly to :8081
-        target_url = "http://localhost:8080"
+        # Route via Envoy Gateway (:18080 -> :18100) if reachable, or directly to :18100
+        target_url = "http://localhost:18080"
         try:
             req = urllib.request.Request(
-                "http://localhost:8080/api/v1/dashboard",
+                "http://localhost:18080/api/v1/dashboard",
                 headers={"X-Tenant-ID": TENANT_A},
             )
             with urllib.request.urlopen(req, timeout=2) as r:
                 if r.status != 200:
-                    target_url = "http://localhost:8081"
+                    target_url = "http://localhost:18100"
         except Exception:
-            target_url = "http://localhost:8081"
+            target_url = "http://localhost:18100"
 
         results = [
             validate_uc01_pdf_ingestion_checksum_and_idempotency(target_url),

@@ -319,7 +319,7 @@ func main() {
 	seedPilotTenants()
 	baseURL := os.Getenv("BASE_URL")
 	if baseURL == "" {
-		baseURL = "http://localhost:8080"
+		baseURL = "http://localhost:18080"
 	}
 
 	pilot := runProfile(baseURL, "pilot_5_users", 5, 6*time.Second, 80*time.Millisecond)

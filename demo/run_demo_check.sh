@@ -36,15 +36,15 @@ echo "  [OK] E2E Validator (UC-01 through UC-06) -> 100% APROVADO"
 "$WORKSPACE/pfm-shared-infra/demo/seed_demo_tenant.sh" >/dev/null
 
 echo "=================================================================="
-echo " 3. Verifying All 4 Web App Routes on http://localhost:3000"
+echo " 3. Verifying All 4 Web App Routes on http://localhost:18300"
 echo "=================================================================="
 for route in "/" "/cards" "/inbox" "/contracts"; do
-  code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3000${route}")
+  code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:18300${route}")
   if [ "$code" != "200" ]; then
-    echo "  [FAIL] Route http://localhost:3000${route} returned HTTP $code"
+    echo "  [FAIL] Route http://localhost:18300${route} returned HTTP $code"
     exit 1
   fi
-  echo "  [OK] Web Route http://localhost:3000${route} -> HTTP 200 OK"
+  echo "  [OK] Web Route http://localhost:18300${route} -> HTTP 200 OK"
 done
 
 echo "=================================================================="
