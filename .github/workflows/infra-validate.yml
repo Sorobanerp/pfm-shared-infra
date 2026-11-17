@@ -1,0 +1,26 @@
+name: pfm-shared-infra-validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate-local-cloud-and-terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Compose & Envoy YAML
+        run: |
+          python3 -c "import yaml; yaml.safe_load(open('local-cloud/docker-compose.yml')); yaml.safe_load(open('local-cloud/envoy/envoy.yaml'))"
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.0
+
+      - name: OpenTofu Format Check
+        run: tofu fmt -check -recursive terraform/
