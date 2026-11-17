@@ -14,7 +14,7 @@ Projetado para rodar com folga na estação **Predator Helios 300 (64GB RAM)** s
 | **`postgres-core-ledger`** | `pgvector/pgvector:pg16` | `15432` → 5432 | Banco exclusivo do `pfm-core-ledger-java` (`DB: pfm_core_ledger`, RLS + `NUMERIC(19,4)`). |
 | **`postgres-ai-rules`** | `pgvector/pgvector:pg16` | `15433` → 5432 | Banco exclusivo do `pfm-ai-worker-python` (`DB: pfm_ai_rules`, embeddings `pgvector` e regras). |
 | **`pfm-kafka`** | `apache/kafka:3.8.0` | `19092` → 9092 | Barramento de eventos KRaft (sem ZooKeeper), 6 partições padrão por tópico. |
-| **`pfm-kafka-ui`** | `provectuslabs/kafka-ui:latest` | `8085` | Interface visual de inspeção de tópicos, partições, schemas e consumer groups. |
+| **`pfm-kafka-ui`** | `provectuslabs/kafka-ui:latest` | `18085` → 8080 | Interface visual de inspeção de tópicos, partições, schemas e consumer groups. |
 | **`pfm-redis`** | `valkey/valkey:8.0-alpine` | `16379` → 6379 | Read-Models de projeção CQRS, chaves de idempotência (72h) e *Rate Limiting*. |
 | **`pfm-envoy-gateway`** | `envoyproxy/envoy:v1.31-latest` | `18080` → 8080 | API Gateway de borda roteando `/api/v1/*` para o BFF Go e injetando `x-correlation-id`. |
 
@@ -85,6 +85,26 @@ AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test aws --region sa-east-1 --endpo
 ```
 
 
-## Mapa de Portas Locais (`.env.local.example`)
+## Mapa Canônico de Portas Locais (Isolamento 12-Factor App)
 
-Todas as portas de host usam a faixa `1xxxx` para evitar colisão com Portainer (`8000/9000/9443`) e serviços do SO. Dentro dos containers/Kubernetes as portas padrão permanecem. Veja [`.env.local.example`](.env.local.example) e a tabela completa em `pfm-docs/docs/operations/sre-finops.md`.
+Todas as portas de host utilizam as faixas `1xxxx` (aplicações e gateways) e `14xxx`/`15xxx`/`16xxx`/`19xxx` (infraestrutura e bancos) para eliminar 100% de colisão com o **Portainer** (`8000`, `9000`, `9443`) ou bancos pré-existentes no sistema operacional. Nos contêineres e no Kubernetes permanecem as portas internas canônicas (`8080`, `9090`, `5432`, `6379`, `9092`, `4566`).
+
+Consulte [`.env.local.example`](.env.local.example) e a topologia detalhada em `pfm-docs/docs/operations/sre-finops.md`.
+
+| Componente | Porta Host Local | Container / K8s | Variável de Ambiente |
+| :--- | :---: | :---: | :--- |
+| `pfm-docs` (MkDocs) | `18000` | `8000` | `PORT=18000` |
+| `pfm-web-nextjs` | `18300` | `3000` | `PORT=18300`, `NEXT_PUBLIC_API_URL` |
+| `pfm-envoy-gateway` | `18080` | `8080` | — (Docker mapping) |
+| `pfm-ingestion-bff-go` | `18100` | `8080` | `SERVER_PORT=18100` |
+| `pfm-forecast-engine-go` | `18110` | `9090` | `GRPC_PORT=18110` |
+| `pfm-core-ledger-java` HTTP | `18200` | `8080` | `SERVER_PORT=18200` |
+| `pfm-core-ledger-java` gRPC | `18210` | `9090` | `GRPC_SERVER_PORT=18210` |
+| `pfm-ai-worker-python` | `18400` | `8080` | `WORKER_PORT=18400` |
+| `postgres-core-ledger` | `15432` | `5432` | `DB_URL` |
+| `postgres-ai-rules` | `15433` | `5432` | `PFM_AI_RULES_DSN` |
+| `pfm-redis` (Valkey) | `16379` | `6379` | `REDIS_ADDR` |
+| `pfm-kafka` (KRaft) | `19092` | `9092` | `KAFKA_BROKERS` / `KAFKA_BOOTSTRAP_SERVERS` |
+| `pfm-kafka-ui` | `18085` | `8080` | — (Docker mapping) |
+| `pfm-localstack` | `14566` | `4566` | `AWS_ENDPOINT_URL` |
+| Android Emulator -> Envoy | `10.0.2.2:18080` | — | `BuildConfig.API_BASE_URL` |
