@@ -70,6 +70,13 @@ static_resources:
       type: LOGICAL_DNS
       dns_lookup_family: V4_ONLY
       lb_policy: ROUND_ROBIN
+      circuit_breakers:
+        thresholds:
+          - priority: DEFAULT
+            max_connections: 2048
+            max_pending_requests: 2048
+            max_requests: 2048
+            max_retries: 3
       load_assignment:
         cluster_name: bff_go_cluster
         endpoints:
