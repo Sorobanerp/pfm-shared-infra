@@ -89,6 +89,18 @@ jobs:
             -backend-config="region=${{ vars.AWS_REGION }}" \
             -backend-config="key=pfm-shared-infra/terraform.tfstate" \
             -backend-config="encrypt=true"
+      - name: Injetar/atualizar secret datadog-secret no namespace monitoring
+        if: env.DD_API_KEY != ''
+        env:
+          DD_API_KEY: ${{ secrets.DD_API_KEY }}
+        run: |
+          if command -v kubectl >/dev/null 2>&1 && kubectl cluster-info >/dev/null 2>&1; then
+            kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+            kubectl create secret generic datadog-secret \
+              --namespace monitoring \
+              --from-literal=api-key="${DD_API_KEY}" \
+              --dry-run=client -o yaml | kubectl apply -f -
+          fi
       - name: tofu apply
         working-directory: ${{ env.TF_DIR }}
         run: tofu apply -auto-approve -input=false -no-color
