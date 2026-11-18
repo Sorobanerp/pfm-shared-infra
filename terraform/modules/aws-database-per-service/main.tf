@@ -86,7 +86,7 @@ resource "aws_security_group" "rds_core_ledger" {
 resource "aws_db_instance" "core_ledger" {
   identifier                            = "pfm-core-ledger-${var.environment}"
   engine                                = "postgres"
-  engine_version                        = "16.4"
+  engine_version                        = "16.15"
   instance_class                        = "db.t4g.micro"
   allocated_storage                     = 20
   max_allocated_storage                 = 50
@@ -158,11 +158,11 @@ resource "aws_elasticache_replication_group" "cache" {
   replication_group_id       = "pfm-forecast-valkey-${var.environment}"
   description                = "PFM Forecast Engine & BFF Valkey Cache (FinOps single-node)"
   engine                     = "valkey"
-  engine_version             = "7.2"
+  engine_version             = "8.0"
   node_type                  = "cache.t4g.micro"
   num_cache_clusters         = 1
   port                       = 6379
-  parameter_group_name       = "default.valkey7"
+  parameter_group_name       = "default.valkey8"
   subnet_group_name          = aws_elasticache_subnet_group.cache.name
   security_group_ids         = [aws_security_group.cache.id]
   at_rest_encryption_enabled = true

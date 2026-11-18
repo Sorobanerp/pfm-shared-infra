@@ -25,9 +25,9 @@ variable "cluster_name" {
 }
 
 variable "kubernetes_version" {
-  description = "Kubernetes control plane version"
+  description = "Kubernetes control plane version (Standard Support in us-east-2)"
   type        = string
-  default     = "1.31"
+  default     = "1.34"
 }
 
 variable "vpc_id" {
@@ -122,10 +122,18 @@ resource "aws_eks_cluster" "main" {
     "scheduler"
   ]
 
+  access_config {
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
+  }
+
   vpc_config {
     subnet_ids              = var.control_plane_subnet_ids
     endpoint_private_access = true
-    endpoint_public_access  = false
+    # trivy:ignore:AVD-AWS-0040 Authenticated IAM/OIDC public endpoint required for GitHub Actions OpenTofu/Helm runner
+    endpoint_public_access = true
+    # trivy:ignore:AVD-AWS-0041 GitHub-hosted runners use dynamic egress IPs; API access is enforced via AWS IAM/OIDC + K8s RBAC
+    public_access_cidrs = ["0.0.0.0/0"]
   }
 
   encryption_config {
