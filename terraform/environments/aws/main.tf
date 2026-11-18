@@ -1,5 +1,5 @@
 # =============================================================================
-# AWS Well-Architected Shared Landing Zone (sa-east-1 Primary / us-east-1 DR)
+# AWS Well-Architected Shared Landing Zone (sa-east-1 Primary / us-east-2 DR)
 # Emulated locally via LocalStack on http://localhost:4566
 # =============================================================================
 
