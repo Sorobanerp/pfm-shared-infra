@@ -35,3 +35,10 @@ module "db_ai_rules" {
 module "event_backbone" {
   source = "../../modules/event-backbone"
 }
+
+module "observability_datadog" {
+  source                  = "../../modules/observability-datadog"
+  namespace               = "monitoring"
+  datadog_site            = "us3.datadoghq.com"
+  api_key_existing_secret = "datadog-secret"
+}

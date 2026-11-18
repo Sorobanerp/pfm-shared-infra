@@ -1,0 +1,35 @@
+datadog:
+  site: "us3.datadoghq.com"
+  apiKeyExistingSecret: "datadog-secret"
+  clusterName: "pfm-platform-eks"
+  kubelet:
+    tlsVerify: false
+  logs:
+    enabled: true
+    containerCollectAll: true
+  apm:
+    portEnabled: true
+    enabled: true
+  otlp:
+    receiver:
+      protocols:
+        grpc:
+          enabled: true
+          endpoint: "0.0.0.0:4317"
+        http:
+          enabled: true
+          endpoint: "0.0.0.0:4318"
+  env:
+    - name: DD_CONTAINER_EXCLUDE
+      value: "name:datadog-agent"
+    - name: DD_APM_IGNORE_RESOURCES
+      value: "GET /health,GET /ready,GET /actuator/health.*"
+    - name: DD_LOGS_CONFIG_PROCESSING_RULES
+      value: >-
+        [
+          {"type":"mask_sequences","name":"mask_cpf","replace_placeholder":"[CPF_MASKED]","pattern":"\\b\\d{3}\\.?\\d{3}\\.?\\d{3}-?\\d{2}\\b"},
+          {"type":"mask_sequences","name":"mask_card_pan","replace_placeholder":"[PAN_MASKED]","pattern":"\\b(?:\\d[ -]*?){13,16}\\b"},
+          {"type":"mask_sequences","name":"mask_pdf_password","replace_placeholder":"\"pdfPassword\":\"[REDACTED]\"","pattern":"\"(?:pdf_?password|password)\"\\s*:\\s*\"[^\"]+\""}
+        ]
+agents:
+  useHostNetwork: false
