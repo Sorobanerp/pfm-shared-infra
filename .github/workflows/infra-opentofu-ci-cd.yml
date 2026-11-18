@@ -47,8 +47,11 @@ jobs:
   plan:
     name: tofu plan (AWS)
     needs: validate
-    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: opentofu/setup-opentofu@v1
@@ -88,7 +91,11 @@ jobs:
             -backend-config="encrypt=true"
       - name: tofu plan
         working-directory: ${{ env.TF_DIR }}
-        run: tofu plan -input=false -no-color
+        env:
+          TF_STATE_BUCKET_AWS: ${{ vars.TF_STATE_BUCKET_AWS }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
+        run: |
+          tofu plan -input=false -no-color
 
   apply:
     name: tofu apply (production)
@@ -96,6 +103,9 @@ jobs:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production   # aprovação da GMUD
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: opentofu/setup-opentofu@v1
