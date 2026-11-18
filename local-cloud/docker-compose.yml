@@ -23,8 +23,8 @@ services:
       - "14566:4566"
     environment:
       - SERVICES=s3,kms,secretsmanager,sts
-      - DEFAULT_REGION=sa-east-1
-      - AWS_DEFAULT_REGION=sa-east-1
+      - DEFAULT_REGION=us-east-2
+      - AWS_DEFAULT_REGION=us-east-2
       - EAGER_SERVICE_LOADING=1
       - SKIP_SSL_CERT_DOWNLOAD=1
     volumes:
