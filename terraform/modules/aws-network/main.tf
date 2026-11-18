@@ -32,6 +32,12 @@ variable "cluster_name" {
   default     = "pfm-eks-prod"
 }
 
+variable "enable_nat_gateway" {
+  description = "FinOps MVP switch: false avoids ~US$ 32/mo NAT Gateway cost by placing EKS nodes in public subnets behind strict SGs; set true for private-subnet NAT scale-out"
+  type        = bool
+  default     = false
+}
+
 locals {
   public_subnet_cidrs  = ["10.20.1.0/24", "10.20.2.0/24"]
   private_subnet_cidrs = ["10.20.11.0/24", "10.20.12.0/24"]
@@ -40,6 +46,7 @@ locals {
     Environment = var.environment
     ManagedBy   = "OpenTofu"
     Project     = "pfm-platform"
+    FinOpsTier  = var.enable_nat_gateway ? "scale-nat" : "mvp-minimal"
   }
 }
 
@@ -70,11 +77,12 @@ resource "aws_internet_gateway" "main" {
 }
 
 resource "aws_subnet" "public" {
-  count                   = length(var.availability_zones)
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = local.public_subnet_cidrs[count.index]
-  availability_zone       = var.availability_zones[count.index]
-  map_public_ip_on_launch = false
+  count             = length(var.availability_zones)
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = local.public_subnet_cidrs[count.index]
+  availability_zone = var.availability_zones[count.index]
+  # trivy:ignore:AVD-AWS-0164 FinOps MVP mode (enable_nat_gateway=false) uses public subnets with strict EKS node SGs blocking all external ingress except ALB
+  map_public_ip_on_launch = !var.enable_nat_gateway
 
   tags = merge(local.common_tags, {
     Name                                        = "pfm-public-${var.availability_zones[count.index]}-${var.environment}"
@@ -99,8 +107,9 @@ resource "aws_subnet" "private" {
   })
 }
 
-# FinOps MVP: Single NAT Gateway in the first public subnet
+# Optional NAT Gateway (disabled by default in FinOps MVP to save ~US$ 32/mo)
 resource "aws_eip" "nat" {
+  count  = var.enable_nat_gateway ? 1 : 0
   domain = "vpc"
 
   tags = merge(local.common_tags, {
@@ -109,7 +118,8 @@ resource "aws_eip" "nat" {
 }
 
 resource "aws_nat_gateway" "main" {
-  allocation_id = aws_eip.nat.id
+  count         = var.enable_nat_gateway ? 1 : 0
+  allocation_id = aws_eip.nat[0].id
   subnet_id     = aws_subnet.public[0].id
 
   tags = merge(local.common_tags, {
@@ -141,14 +151,16 @@ resource "aws_route_table_association" "public" {
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.main.id
 
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.main.id
-  }
-
   tags = merge(local.common_tags, {
     Name = "pfm-rt-private-${var.environment}"
   })
+}
+
+resource "aws_route" "private_nat" {
+  count                  = var.enable_nat_gateway ? 1 : 0
+  route_table_id         = aws_route_table.private.id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.main[0].id
 }
 
 resource "aws_route_table_association" "private" {
@@ -175,4 +187,9 @@ output "public_subnet_ids" {
 output "private_subnet_ids" {
   description = "List of private subnet IDs across us-east-2a and us-east-2b"
   value       = aws_subnet.private[*].id
+}
+
+output "eks_node_subnet_ids" {
+  description = "Subnets for EKS worker nodes (public with strict SG in FinOps MVP, private when enable_nat_gateway=true)"
+  value       = var.enable_nat_gateway ? aws_subnet.private[*].id : aws_subnet.public[*].id
 }

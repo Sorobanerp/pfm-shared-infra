@@ -1,7 +1,7 @@
 # =============================================================================
-# AWS Well-Architected Shared Landing Zone (us-east-2 Ohio)
-# Real AWS Infrastructure: VPC, KMS, RDS PostgreSQL 16, ElastiCache Valkey,
-# EKS 1.31 (Graviton t4g.medium) + OIDC IRSA + Datadog Agent Helm Release
+# AWS Well-Architected Shared Landing Zone (us-east-2 Ohio) — FinOps MVP Profile
+# Target: ~US$ 41/mo (No NAT GW, 1..3 Graviton SPOT, 1 Shared RDS + 1 Valkey,
+# 0 MSK [Upstash Serverless], 1 Shared ALB, Full Autoscale: CA + Metrics + KEDA)
 # =============================================================================
 
 terraform {
@@ -38,6 +38,12 @@ variable "environment" {
   default     = "prod"
 }
 
+variable "enable_nat_gateway" {
+  description = "Keep false in FinOps MVP to save ~US$ 32/mo; set true when scaling to private-subnet NAT"
+  type        = bool
+  default     = false
+}
+
 provider "aws" {
   region = var.aws_region
 }
@@ -48,6 +54,7 @@ module "network" {
   vpc_cidr           = "10.20.0.0/16"
   availability_zones = ["us-east-2a", "us-east-2b"]
   cluster_name       = "pfm-eks-${var.environment}"
+  enable_nat_gateway = var.enable_nat_gateway
 }
 
 module "security_kms" {
@@ -56,6 +63,8 @@ module "security_kms" {
   alias_name  = "alias/pfm-master-key"
 }
 
+# Single Shared RDS PostgreSQL 16 (hosts logical DBs/schemas: pfm_core_ledger + pfm_ai_rules with RLS)
+# + Single Valkey cache.t4g.micro (0 AWS MSK clusters; Kafka via Upstash Serverless Secret)
 module "database_per_service" {
   source             = "../../modules/aws-database-per-service"
   environment        = var.environment
@@ -66,12 +75,17 @@ module "database_per_service" {
 }
 
 module "eks" {
-  source             = "../../modules/aws-eks"
-  environment        = var.environment
-  cluster_name       = "pfm-eks-${var.environment}"
-  kubernetes_version = "1.31"
-  private_subnet_ids = module.network.private_subnet_ids
-  kms_master_key_arn = module.security_kms.kms_master_key_arn
+  source                   = "../../modules/aws-eks"
+  environment              = var.environment
+  cluster_name             = "pfm-eks-${var.environment}"
+  kubernetes_version       = "1.31"
+  vpc_id                   = module.network.vpc_id
+  vpc_cidr                 = module.network.vpc_cidr
+  control_plane_subnet_ids = module.network.private_subnet_ids
+  node_subnet_ids          = module.network.eks_node_subnet_ids
+  kms_master_key_arn       = module.security_kms.kms_master_key_arn
+  node_instance_types      = ["t4g.small", "t4g.medium"]
+  node_capacity_type       = "SPOT"
 }
 
 module "event_backbone" {
@@ -94,6 +108,17 @@ provider "helm" {
     cluster_ca_certificate = base64decode(module.eks.eks_cluster_ca_data)
     token                  = data.aws_eks_cluster_auth.eks.token
   }
+}
+
+module "eks_addons" {
+  source                      = "../../modules/aws-eks-addons"
+  cluster_name                = module.eks.eks_cluster_name
+  aws_region                  = var.aws_region
+  vpc_id                      = module.network.vpc_id
+  cluster_autoscaler_role_arn = module.eks.cluster_autoscaler_role_arn
+  alb_controller_role_arn     = module.eks.alb_controller_role_arn
+
+  depends_on = [module.eks]
 }
 
 module "observability_datadog" {
@@ -135,12 +160,12 @@ output "kms_master_key_id" {
 }
 
 output "rds_endpoint" {
-  description = "PostgreSQL 16 RDS endpoint for pfm_core_ledger"
+  description = "Shared PostgreSQL 16 RDS endpoint (pfm_core_ledger + pfm_ai_rules)"
   value       = module.database_per_service.rds_endpoint
 }
 
 output "rds_resource_id" {
-  description = "PostgreSQL 16 RDS resource ID for IAM DB authentication"
+  description = "Shared PostgreSQL 16 RDS resource ID for IAM DB authentication"
   value       = module.database_per_service.rds_resource_id
 }
 
@@ -167,4 +192,9 @@ output "oidc_provider_arn" {
 output "oidc_issuer_url" {
   description = "EKS IAM OIDC Issuer URL without https://"
   value       = module.eks.oidc_issuer_url
+}
+
+output "shared_ingress_name" {
+  description = "Single shared ALB Ingress name"
+  value       = module.eks_addons.shared_ingress_name
 }
