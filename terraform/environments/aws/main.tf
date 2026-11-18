@@ -78,7 +78,7 @@ module "eks" {
   source                   = "../../modules/aws-eks"
   environment              = var.environment
   cluster_name             = "pfm-eks-${var.environment}"
-  kubernetes_version       = "1.31"
+  kubernetes_version       = "1.34"
   vpc_id                   = module.network.vpc_id
   vpc_cidr                 = module.network.vpc_cidr
   control_plane_subnet_ids = module.network.private_subnet_ids
