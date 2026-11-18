@@ -60,6 +60,7 @@ resource "helm_release" "metrics_server" {
   chart      = "metrics-server"
   version    = "3.12.2"
   namespace  = "kube-system"
+  wait       = false
 
   set {
     name  = "args[0]"
@@ -77,6 +78,7 @@ resource "helm_release" "cluster_autoscaler" {
   chart      = "cluster-autoscaler"
   version    = "9.43.2"
   namespace  = "kube-system"
+  wait       = false
 
   set {
     name  = "autoDiscovery.clusterName"
@@ -115,6 +117,7 @@ resource "helm_release" "keda" {
   version          = "2.15.2"
   namespace        = "keda"
   create_namespace = true
+  wait             = false
 }
 
 # =============================================================================
@@ -161,6 +164,8 @@ resource "kubernetes_namespace_v1" "pfm_platform" {
 }
 
 resource "kubernetes_ingress_v1" "pfm_shared_edge" {
+  wait_for_load_balancer = false
+
   metadata {
     name      = "pfm-shared-edge-ingress"
     namespace = kubernetes_namespace_v1.pfm_platform.metadata[0].name

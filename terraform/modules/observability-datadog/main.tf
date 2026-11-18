@@ -33,6 +33,7 @@ resource "helm_release" "datadog_agent" {
   version          = "3.74.0"
   namespace        = var.namespace
   create_namespace = true
+  wait             = false
 
   set {
     name  = "datadog.site"
