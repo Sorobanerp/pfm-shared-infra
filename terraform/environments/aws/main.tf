@@ -44,6 +44,12 @@ variable "enable_nat_gateway" {
   default     = false
 }
 
+variable "enable_shared_ingress" {
+  description = "Keep false until app workloads are deployed to avoid idle ALB charges (~US$ 16/mo)"
+  type        = bool
+  default     = false
+}
+
 provider "aws" {
   region = var.aws_region
 }
@@ -84,7 +90,7 @@ module "eks" {
   control_plane_subnet_ids = module.network.private_subnet_ids
   node_subnet_ids          = module.network.eks_node_subnet_ids
   kms_master_key_arn       = module.security_kms.kms_master_key_arn
-  node_instance_types      = ["t4g.small", "t4g.medium"]
+  node_instance_types      = ["t4g.medium", "t4g.small"]
   node_capacity_type       = "SPOT"
 }
 
@@ -117,6 +123,7 @@ module "eks_addons" {
   vpc_id                      = module.network.vpc_id
   cluster_autoscaler_role_arn = module.eks.cluster_autoscaler_role_arn
   alb_controller_role_arn     = module.eks.alb_controller_role_arn
+  enable_shared_ingress       = var.enable_shared_ingress
 
   depends_on = [module.eks]
 }
