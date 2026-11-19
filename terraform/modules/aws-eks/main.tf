@@ -57,9 +57,9 @@ variable "kms_master_key_arn" {
 }
 
 variable "node_instance_types" {
-  description = "Arm Graviton instance types for FinOps MVP"
+  description = "Arm Graviton instance types for FinOps MVP (t4g.medium SPOT ~US$ 7.50/mo)"
   type        = list(string)
-  default     = ["t4g.small", "t4g.medium"]
+  default     = ["t4g.medium", "t4g.small"]
 }
 
 variable "node_capacity_type" {
@@ -157,7 +157,7 @@ resource "aws_eks_cluster" "main" {
 
 resource "aws_security_group" "eks_nodes" {
   name        = "${var.cluster_name}-nodes-strict-sg"
-  description = "Strict SG for EKS nodes: blocks all external ingress, allows internal VPC/ALB traffic only"
+  description = "Strict SG for EKS nodes: blocks external ingress, allows VPC/EKS control plane and outbound internet"
   vpc_id      = var.vpc_id
 
   ingress {
@@ -168,20 +168,20 @@ resource "aws_security_group" "eks_nodes" {
     cidr_blocks = [var.vpc_cidr]
   }
 
-  egress {
-    description = "Allow internal VPC communication (RDS, Valkey, EKS API)"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = [var.vpc_cidr]
+  ingress {
+    description     = "Allow bidirectional communication from EKS Cluster Security Group"
+    from_port       = 0
+    to_port         = 0
+    protocol        = "-1"
+    security_groups = [aws_eks_cluster.main.vpc_config[0].cluster_security_group_id]
   }
 
   egress {
-    description = "Allow outbound HTTPS (443) for ECR, Datadog OTLP, Upstash Kafka and AWS APIs"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    # trivy:ignore:AVD-AWS-0104 Outbound HTTPS 443 required for container registries, Datadog intake and Upstash Kafka without NAT Gateway
+    description = "Allow all outbound traffic (EKS API, ECR, DNS, NTP, Datadog, Upstash Kafka)"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    # trivy:ignore:AVD-AWS-0104 Outbound internet access required for EKS worker nodes without NAT Gateway
     cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -269,7 +269,7 @@ resource "aws_eks_node_group" "main" {
   scaling_config {
     desired_size = 1
     min_size     = 1
-    max_size     = 3
+    max_size     = 2
   }
 
   launch_template {
