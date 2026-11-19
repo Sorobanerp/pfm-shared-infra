@@ -50,6 +50,12 @@ variable "app_host" {
   default     = "app.pfm.sorobanerp.com"
 }
 
+variable "enable_shared_ingress" {
+  description = "FinOps switch: keep false until application workloads are deployed to avoid idle ALB cost (~US$ 16/mo)"
+  type        = bool
+  default     = false
+}
+
 # =============================================================================
 # 1. Metrics Server (Enables HPA CPU/Memory scaling across all microservices)
 # =============================================================================
@@ -164,6 +170,7 @@ resource "kubernetes_namespace_v1" "pfm_platform" {
 }
 
 resource "kubernetes_ingress_v1" "pfm_shared_edge" {
+  count                  = var.enable_shared_ingress ? 1 : 0
   wait_for_load_balancer = false
 
   metadata {
@@ -223,6 +230,6 @@ resource "kubernetes_ingress_v1" "pfm_shared_edge" {
 }
 
 output "shared_ingress_name" {
-  description = "Single shared ALB Ingress resource name"
-  value       = kubernetes_ingress_v1.pfm_shared_edge.metadata[0].name
+  description = "Single shared ALB Ingress resource name (empty when enable_shared_ingress=false)"
+  value       = var.enable_shared_ingress ? kubernetes_ingress_v1.pfm_shared_edge[0].metadata[0].name : "disabled-until-app-deploy"
 }
