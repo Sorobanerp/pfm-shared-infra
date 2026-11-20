@@ -11,14 +11,6 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.70"
     }
-    helm = {
-      source  = "hashicorp/helm"
-      version = "~> 2.15"
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 2.33"
-    }
     tls = {
       source  = "hashicorp/tls"
       version = "~> 4.0"
@@ -67,20 +59,8 @@ provider "datadog" {
   validate = false
 }
 
-variable "compute_engine" {
-  description = "Compute engine for workloads: ecs_fargate_spot (ADR-008 Pilot) or eks"
-  type        = string
-  default     = "ecs_fargate_spot"
-}
-
 variable "enable_nat_gateway" {
   description = "Keep false in FinOps MVP to save ~US$ 32/mo; set true when scaling to private-subnet NAT"
-  type        = bool
-  default     = false
-}
-
-variable "enable_shared_ingress" {
-  description = "Keep false until app workloads are deployed to avoid idle ALB charges (~US$ 16/mo)"
   type        = bool
   default     = false
 }
@@ -108,7 +88,6 @@ module "network" {
   environment        = var.environment
   vpc_cidr           = "10.20.0.0/16"
   availability_zones = ["us-east-2a", "us-east-2b"]
-  cluster_name       = "pfm-eks-${var.environment}"
   enable_nat_gateway = var.enable_nat_gateway
 }
 
@@ -216,7 +195,6 @@ resource "aws_secretsmanager_secret_version" "upstash_redis" {
 # Compute: Amazon ECS Fargate Spot & Cloud Map Pilot (ADR-008)
 # =============================================================================
 module "ecs_pilot" {
-  count              = var.compute_engine == "ecs_fargate_spot" ? 1 : 0
   source             = "../../modules/aws-ecs-pilot"
   environment        = var.environment
   vpc_id             = module.network.vpc_id
@@ -224,71 +202,19 @@ module "ecs_pilot" {
   private_subnet_ids = module.network.private_subnet_ids
 }
 
-# =============================================================================
-# Compute (Optional/Legacy): Amazon EKS (Disabled when compute_engine = "ecs_fargate_spot")
-# =============================================================================
-module "eks" {
-  count                    = var.compute_engine == "eks" ? 1 : 0
-  source                   = "../../modules/aws-eks"
-  environment              = var.environment
-  cluster_name             = "pfm-eks-${var.environment}"
-  kubernetes_version       = "1.34"
-  vpc_id                   = module.network.vpc_id
-  vpc_cidr                 = module.network.vpc_cidr
-  control_plane_subnet_ids = module.network.private_subnet_ids
-  node_subnet_ids          = module.network.eks_node_subnet_ids
-  kms_master_key_arn       = module.security_kms.kms_master_key_arn
-  node_instance_types      = ["t4g.medium", "t4g.small"]
-  node_capacity_type       = "SPOT"
-}
-
 module "event_backbone" {
   source = "../../modules/event-backbone"
 }
 
-data "aws_eks_cluster_auth" "eks" {
-  count = var.compute_engine == "eks" ? 1 : 0
-  name  = module.eks[0].eks_cluster_name
-}
-
-provider "kubernetes" {
-  host                   = var.compute_engine == "eks" ? module.eks[0].eks_cluster_endpoint : "https://127.0.0.1"
-  cluster_ca_certificate = var.compute_engine == "eks" ? base64decode(module.eks[0].eks_cluster_ca_data) : ""
-  token                  = var.compute_engine == "eks" ? data.aws_eks_cluster_auth.eks[0].token : ""
-}
-
-provider "helm" {
-  kubernetes {
-    host                   = var.compute_engine == "eks" ? module.eks[0].eks_cluster_endpoint : "https://127.0.0.1"
-    cluster_ca_certificate = var.compute_engine == "eks" ? base64decode(module.eks[0].eks_cluster_ca_data) : ""
-    token                  = var.compute_engine == "eks" ? data.aws_eks_cluster_auth.eks[0].token : ""
-  }
-}
-
-module "eks_addons" {
-  count                       = var.compute_engine == "eks" ? 1 : 0
-  source                      = "../../modules/aws-eks-addons"
-  cluster_name                = module.eks[0].eks_cluster_name
-  aws_region                  = var.aws_region
-  vpc_id                      = module.network.vpc_id
-  cluster_autoscaler_role_arn = module.eks[0].cluster_autoscaler_role_arn
-  alb_controller_role_arn     = module.eks[0].alb_controller_role_arn
-  enable_shared_ingress       = var.enable_shared_ingress
-
-  depends_on = [module.eks]
-}
-
 module "observability_datadog" {
-  count                   = (var.compute_engine == "eks" || var.enable_datadog_monitors) ? 1 : 0
+  count                   = var.enable_datadog_monitors ? 1 : 0
   source                  = "../../modules/observability-datadog"
   namespace               = "monitoring"
   datadog_site            = "us3.datadoghq.com"
   api_key_existing_secret = "datadog-secret"
-  enable_helm_agent       = var.compute_engine == "eks"
+  enable_helm_agent       = false
   enable_datadog_monitors = var.enable_datadog_monitors
   environment             = var.environment
-
-  depends_on = [module.eks]
 }
 
 # =============================================================================
@@ -308,6 +234,11 @@ output "public_subnet_ids" {
 output "private_subnet_ids" {
   description = "Shared private subnet IDs"
   value       = module.network.private_subnet_ids
+}
+
+output "kms_key_arn" {
+  description = "Shared KMS Master Key ARN"
+  value       = module.security_kms.kms_master_key_arn
 }
 
 output "kms_master_key_arn" {
@@ -336,34 +267,49 @@ output "redis_endpoint" {
 }
 
 # ECS Pilot Outputs (ADR-008)
+output "ecs_cluster_id" {
+  description = "ECS Cluster ID (Pilot)"
+  value       = module.ecs_pilot.ecs_cluster_id
+}
+
 output "ecs_cluster_name" {
   description = "ECS Cluster Name (Pilot)"
-  value       = try(module.ecs_pilot[0].ecs_cluster_name, "")
+  value       = module.ecs_pilot.ecs_cluster_name
 }
 
 output "ecs_cluster_arn" {
   description = "ECS Cluster ARN (Pilot)"
-  value       = try(module.ecs_pilot[0].ecs_cluster_arn, "")
+  value       = module.ecs_pilot.ecs_cluster_arn
 }
 
 output "ecs_tasks_security_group_id" {
   description = "Security Group ID for ECS tasks"
-  value       = try(module.ecs_pilot[0].ecs_tasks_security_group_id, "")
+  value       = module.ecs_pilot.ecs_tasks_security_group_id
+}
+
+output "service_discovery_namespace_id" {
+  description = "Cloud Map / Service Connect Namespace ID"
+  value       = module.ecs_pilot.cloud_map_namespace_id
 }
 
 output "cloud_map_namespace_id" {
   description = "Cloud Map / Service Connect Namespace ID"
-  value       = try(module.ecs_pilot[0].cloud_map_namespace_id, "")
+  value       = module.ecs_pilot.cloud_map_namespace_id
 }
 
 output "cloud_map_namespace_arn" {
   description = "Cloud Map / Service Connect Namespace ARN"
-  value       = try(module.ecs_pilot[0].cloud_map_namespace_arn, "")
+  value       = module.ecs_pilot.cloud_map_namespace_arn
 }
 
 output "cloud_map_namespace_name" {
   description = "Cloud Map / Service Connect Namespace Name"
-  value       = try(module.ecs_pilot[0].cloud_map_namespace_name, "")
+  value       = module.ecs_pilot.cloud_map_namespace_name
+}
+
+output "s3_statements_bucket" {
+  description = "Encrypted S3 bucket for statement PDFs"
+  value       = aws_s3_bucket.statements.id
 }
 
 output "s3_statements_bucket_id" {
@@ -376,6 +322,14 @@ output "s3_statements_bucket_arn" {
   value       = aws_s3_bucket.statements.arn
 }
 
+output "secrets_arn" {
+  description = "Secrets Manager ARNs for Upstash Kafka and Redis"
+  value = {
+    upstash_kafka = aws_secretsmanager_secret.upstash_kafka.arn
+    upstash_redis = aws_secretsmanager_secret.upstash_redis.arn
+  }
+}
+
 output "upstash_kafka_secret_arn" {
   description = "Secrets Manager ARN for Upstash Kafka Serverless"
   value       = aws_secretsmanager_secret.upstash_kafka.arn
@@ -384,30 +338,4 @@ output "upstash_kafka_secret_arn" {
 output "upstash_redis_secret_arn" {
   description = "Secrets Manager ARN for Upstash Redis Serverless"
   value       = aws_secretsmanager_secret.upstash_redis.arn
-}
-
-# Optional EKS Outputs
-output "eks_cluster_name" {
-  description = "EKS Cluster name"
-  value       = try(module.eks[0].eks_cluster_name, "")
-}
-
-output "eks_cluster_endpoint" {
-  description = "EKS Cluster API endpoint"
-  value       = try(module.eks[0].eks_cluster_endpoint, "")
-}
-
-output "oidc_provider_arn" {
-  description = "EKS IAM OIDC Provider ARN for IRSA"
-  value       = try(module.eks[0].oidc_provider_arn, "")
-}
-
-output "oidc_issuer_url" {
-  description = "EKS IAM OIDC Issuer URL without https://"
-  value       = try(module.eks[0].oidc_issuer_url, "")
-}
-
-output "shared_ingress_name" {
-  description = "Single shared ALB Ingress name"
-  value       = try(module.eks_addons[0].shared_ingress_name, "")
 }
