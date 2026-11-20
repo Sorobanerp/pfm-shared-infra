@@ -1,0 +1,112 @@
+# ==============================================================================
+# PFM Core Banking — OpenTelemetry Collector Gateway Configuration (ADR-010)
+# Multi-Cloud Unified Observability with LGPD Redaction & Tail-Based Sampling
+# Target Backend: Datadog (us3.datadoghq.com)
+# ==============================================================================
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  # Drop noisy healthcheck / probe telemetry
+  filter/healthchecks:
+    error_mode: ignore
+    traces:
+      span:
+        - 'attributes["http.route"] == "/health"'
+        - 'attributes["http.route"] == "/healthz"'
+        - 'attributes["http.route"] == "/actuator/health"'
+        - 'attributes["url.path"] == "/health"'
+        - 'attributes["url.path"] == "/healthz"'
+        - 'attributes["url.path"] == "/actuator/health"'
+
+  # LGPD Zero-PII Redaction Processor
+  redaction/lgpd:
+    allow_all_keys: true
+    blocked_values:
+      - '\d{3}\.\d{3}\.\d{3}-\d{2}'          # CPF
+      - '\b(?:\d{4}[ -]?){3}\d{4}\b'          # Credit Card Number
+      - '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' # Email
+
+  # Standardize multi-cloud attributes (aws | azure | gcp) & tenant.tier
+  attributes/standardize:
+    actions:
+      - key: cloud.provider
+        action: insert
+        value: ${env:CLOUD_PROVIDER:-aws}
+      - key: deployment.environment
+        action: insert
+        value: ${env:DEPLOYMENT_ENV:-prod}
+      - key: tenant.tier
+        action: insert
+        value: ${env:DEFAULT_TENANT_TIER:-STANDARD}
+
+  # Prevent Datadog custom-metric cardinality explosion: strip tenant_id from metrics
+  attributes/metrics_cardinality:
+    actions:
+      - key: tenant_id
+        action: delete
+      - key: tenant.id
+        action: delete
+      - key: user_id
+        action: delete
+
+  # ADR-010 Tail-Based Sampling:
+  # - 100% of ERROR traces
+  # - 100% of slow traces (> 500ms)
+  # - 10% of healthy/fast traces
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 50000
+    expected_new_traces_per_sec: 1000
+    policies:
+      - name: errors-100pct
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: slow-traces-100pct
+        type: latency
+        latency:
+          threshold_ms: 500
+      - name: ok-traces-10pct
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 10
+
+  batch:
+    send_batch_size: 1024
+    timeout: 5s
+
+exporters:
+  otlphttp/datadog:
+    endpoint: https://otlp.us3.datadoghq.com
+    headers:
+      dd-api-key: ${env:DD_API_KEY}
+      dd-otel-metric-config: '{"resource_attributes_as_tags": true}'
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/healthchecks, redaction/lgpd, attributes/standardize, tail_sampling, batch]
+      exporters: [otlphttp/datadog]
+
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/standardize, attributes/metrics_cardinality, batch]
+      exporters: [otlphttp/datadog]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/healthchecks, redaction/lgpd, attributes/standardize, batch]
+      exporters: [otlphttp/datadog]
