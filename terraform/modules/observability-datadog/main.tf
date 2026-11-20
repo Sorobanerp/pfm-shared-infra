@@ -5,6 +5,10 @@ terraform {
       source  = "hashicorp/helm"
       version = "~> 2.15"
     }
+    datadog = {
+      source  = "DataDog/datadog"
+      version = "~> 3.45"
+    }
   }
 }
 
@@ -26,7 +30,14 @@ variable "namespace" {
   description = "Kubernetes namespace for observability agents"
 }
 
+variable "enable_helm_agent" {
+  type        = bool
+  default     = false
+  description = "Enable Datadog Helm Agent inside EKS"
+}
+
 resource "helm_release" "datadog_agent" {
+  count            = var.enable_helm_agent ? 1 : 0
   name             = "datadog-agent"
   repository       = "https://helm.datadoghq.com"
   chart            = "datadog"
