@@ -85,10 +85,8 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = !var.enable_nat_gateway
 
   tags = merge(local.common_tags, {
-    Name                                        = "pfm-public-${var.availability_zones[count.index]}-${var.environment}"
-    Tier                                        = "public"
-    "kubernetes.io/role/elb"                    = "1"
-    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+    Name = "pfm-public-${var.availability_zones[count.index]}-${var.environment}"
+    Tier = "public"
   })
 }
 
@@ -100,10 +98,8 @@ resource "aws_subnet" "private" {
   map_public_ip_on_launch = false
 
   tags = merge(local.common_tags, {
-    Name                                        = "pfm-private-${var.availability_zones[count.index]}-${var.environment}"
-    Tier                                        = "private"
-    "kubernetes.io/role/internal-elb"           = "1"
-    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+    Name = "pfm-private-${var.availability_zones[count.index]}-${var.environment}"
+    Tier = "private"
   })
 }
 
@@ -187,9 +183,4 @@ output "public_subnet_ids" {
 output "private_subnet_ids" {
   description = "List of private subnet IDs across us-east-2a and us-east-2b"
   value       = aws_subnet.private[*].id
-}
-
-output "eks_node_subnet_ids" {
-  description = "Subnets for EKS worker nodes (public with strict SG in FinOps MVP, private when enable_nat_gateway=true)"
-  value       = var.enable_nat_gateway ? aws_subnet.private[*].id : aws_subnet.public[*].id
 }

@@ -28,7 +28,7 @@ resource "aws_service_discovery_private_dns_namespace" "pfm_internal" {
 }
 
 resource "aws_ecs_cluster" "pfm_pilot" {
-  name = "pfm-pilot-${var.environment}"
+  name = "pfm-ecs-pilot"
 
   service_connect_defaults {
     namespace = aws_service_discovery_private_dns_namespace.pfm_internal.arn
@@ -40,7 +40,7 @@ resource "aws_ecs_cluster" "pfm_pilot" {
   }
 
   tags = {
-    Name         = "pfm-pilot-${var.environment}"
+    Name         = "pfm-ecs-pilot"
     Environment  = var.environment
     ManagedBy    = "OpenTofu"
     FinOpsTier   = "Pilot-3-Months"
