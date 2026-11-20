@@ -7,6 +7,8 @@ Todas as alterações notáveis neste repositório são documentadas neste arqui
 ## [Unreleased]
 
 ### Added
+- Configuração oficial do **OpenTelemetry Collector Gateway** (`observability/otel-collector-config.yaml`) com `tail_sampling` (100% erros/latência > 500ms, 10% OK), `redaction/lgpd` e remoção de `tenant_id` em métricas para Datadog (`us3.datadoghq.com`).
+- Dashboard unificado **PFM Unified Product Health** (`datadog_dashboard`) e monitores críticos (`datadog_monitor` para RLS/429, DLQs `*.dlq` e latência P99) em `terraform/modules/observability-datadog/dashboards.tf`, controlados por `var.enable_datadog_monitors`.
 - Padronização de governança DevEx (`README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`) e workflow de validação de **Conventional Commits** em Pull Requests para `develop` e `main`.
 
 ---

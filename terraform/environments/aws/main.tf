@@ -23,6 +23,10 @@ terraform {
       source  = "hashicorp/tls"
       version = "~> 4.0"
     }
+    datadog = {
+      source  = "DataDog/datadog"
+      version = "~> 3.45"
+    }
   }
 }
 
@@ -36,6 +40,31 @@ variable "environment" {
   description = "Target environment name"
   type        = string
   default     = "prod"
+}
+
+variable "enable_datadog_monitors" {
+  description = "Enable Datadog Unified Dashboard and Critical Security/SLO Monitors (ADR-010)"
+  type        = bool
+  default     = false
+}
+
+variable "datadog_api_key" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
+variable "datadog_app_key" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
+provider "datadog" {
+  api_key  = var.datadog_api_key
+  app_key  = var.datadog_app_key
+  api_url  = "https://api.us3.datadoghq.com/"
+  validate = false
 }
 
 variable "compute_engine" {
@@ -250,11 +279,14 @@ module "eks_addons" {
 }
 
 module "observability_datadog" {
-  count                   = var.compute_engine == "eks" ? 1 : 0
+  count                   = (var.compute_engine == "eks" || var.enable_datadog_monitors) ? 1 : 0
   source                  = "../../modules/observability-datadog"
   namespace               = "monitoring"
   datadog_site            = "us3.datadoghq.com"
   api_key_existing_secret = "datadog-secret"
+  enable_helm_agent       = var.compute_engine == "eks"
+  enable_datadog_monitors = var.enable_datadog_monitors
+  environment             = var.environment
 
   depends_on = [module.eks]
 }
