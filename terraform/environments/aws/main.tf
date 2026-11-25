@@ -100,12 +100,13 @@ module "security_kms" {
 # Single Shared RDS PostgreSQL 16 (hosts logical DBs/schemas: pfm_core_ledger + pfm_ai_rules with RLS)
 # + Single Valkey cache.t4g.micro (0 AWS MSK clusters; Kafka via Upstash Serverless Secret)
 module "database_per_service" {
-  source             = "../../modules/aws-database-per-service"
-  environment        = var.environment
-  vpc_id             = module.network.vpc_id
-  vpc_cidr           = module.network.vpc_cidr
-  private_subnet_ids = module.network.private_subnet_ids
-  kms_master_key_arn = module.security_kms.kms_master_key_arn
+  source                      = "../../modules/aws-database-per-service"
+  environment                 = var.environment
+  vpc_id                      = module.network.vpc_id
+  vpc_cidr                    = module.network.vpc_cidr
+  private_subnet_ids          = module.network.private_subnet_ids
+  kms_master_key_arn          = module.security_kms.kms_master_key_arn
+  ecs_tasks_security_group_id = module.ecs_pilot.ecs_tasks_security_group_id
 }
 
 # =============================================================================
@@ -156,6 +157,43 @@ resource "aws_s3_bucket_public_access_block" "statements" {
   depends_on = [aws_s3_bucket.statements]
 }
 
+data "aws_iam_policy_document" "statements_bucket_guardrail" {
+  statement {
+    sid     = "DenyInsecureTransport"
+    effect  = "Deny"
+    actions = ["s3:*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    resources = [
+      aws_s3_bucket.statements.arn,
+      "${aws_s3_bucket.statements.arn}/*"
+    ]
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+
+  statement {
+    sid     = "DenyDeleteBucket"
+    effect  = "Deny"
+    actions = ["s3:DeleteBucket"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    resources = [aws_s3_bucket.statements.arn]
+  }
+}
+
+resource "aws_s3_bucket_policy" "statements_guardrail" {
+  bucket = aws_s3_bucket.statements.id
+  policy = data.aws_iam_policy_document.statements_bucket_guardrail.json
+}
+
 # =============================================================================
 # AWS Secrets Manager for Upstash Kafka & Redis Serverless
 # =============================================================================
@@ -200,6 +238,8 @@ module "ecs_pilot" {
   vpc_id             = module.network.vpc_id
   vpc_cidr           = module.network.vpc_cidr
   private_subnet_ids = module.network.private_subnet_ids
+  public_subnet_ids  = module.network.public_subnet_ids
+  kms_master_key_arn = module.security_kms.kms_master_key_arn
 }
 
 module "event_backbone" {
@@ -324,6 +364,7 @@ output "s3_statements_bucket_arn" {
 
 output "secrets_arn" {
   description = "Secrets Manager ARNs for Upstash Kafka and Redis"
+  sensitive   = true
   value = {
     upstash_kafka = aws_secretsmanager_secret.upstash_kafka.arn
     upstash_redis = aws_secretsmanager_secret.upstash_redis.arn
@@ -332,10 +373,12 @@ output "secrets_arn" {
 
 output "upstash_kafka_secret_arn" {
   description = "Secrets Manager ARN for Upstash Kafka Serverless"
+  sensitive   = true
   value       = aws_secretsmanager_secret.upstash_kafka.arn
 }
 
 output "upstash_redis_secret_arn" {
   description = "Secrets Manager ARN for Upstash Redis Serverless"
+  sensitive   = true
   value       = aws_secretsmanager_secret.upstash_redis.arn
 }

@@ -35,6 +35,12 @@ variable "kms_master_key_arn" {
   type        = string
 }
 
+variable "ecs_tasks_security_group_id" {
+  description = "ECS Tasks Security Group ID allowed to connect to PostgreSQL 5432 and Valkey 6379"
+  type        = string
+  default     = ""
+}
+
 locals {
   common_tags = {
     Environment = var.environment
@@ -59,23 +65,23 @@ resource "aws_db_subnet_group" "core_ledger" {
 
 resource "aws_security_group" "rds_core_ledger" {
   name        = "pfm-core-ledger-rds-sg-${var.environment}"
-  description = "Restrict PostgreSQL 5432 access exclusively to PFM VPC CIDR"
+  description = "Restrict PostgreSQL 5432 access exclusively to ECS Tasks Security Group"
   vpc_id      = var.vpc_id
 
   ingress {
-    description = "PostgreSQL access from internal VPC workloads"
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]
+    description     = "PostgreSQL 5432 access exclusively from ECS Fargate Tasks Security Group"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = var.ecs_tasks_security_group_id != "" ? [var.ecs_tasks_security_group_id] : []
   }
 
   egress {
-    description = "Allow internal VPC responses only"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = [var.vpc_cidr]
+    description     = "Allow responses exclusively to ECS Fargate Tasks Security Group"
+    from_port       = 0
+    to_port         = 0
+    protocol        = "-1"
+    security_groups = var.ecs_tasks_security_group_id != "" ? [var.ecs_tasks_security_group_id] : []
   }
 
   tags = merge(local.common_tags, {
@@ -130,23 +136,23 @@ resource "aws_elasticache_subnet_group" "cache" {
 
 resource "aws_security_group" "cache" {
   name        = "pfm-cache-sg-${var.environment}"
-  description = "Restrict Valkey/Redis 6379 access exclusively to PFM VPC CIDR"
+  description = "Restrict Valkey/Redis 6379 access exclusively to ECS Tasks Security Group"
   vpc_id      = var.vpc_id
 
   ingress {
-    description = "Valkey/Redis access from internal VPC workloads"
-    from_port   = 6379
-    to_port     = 6379
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]
+    description     = "Valkey/Redis 6379 access exclusively from ECS Fargate Tasks Security Group"
+    from_port       = 6379
+    to_port         = 6379
+    protocol        = "tcp"
+    security_groups = var.ecs_tasks_security_group_id != "" ? [var.ecs_tasks_security_group_id] : []
   }
 
   egress {
-    description = "Allow internal VPC responses only"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = [var.vpc_cidr]
+    description     = "Allow responses exclusively to ECS Fargate Tasks Security Group"
+    from_port       = 0
+    to_port         = 0
+    protocol        = "-1"
+    security_groups = var.ecs_tasks_security_group_id != "" ? [var.ecs_tasks_security_group_id] : []
   }
 
   tags = merge(local.common_tags, {
