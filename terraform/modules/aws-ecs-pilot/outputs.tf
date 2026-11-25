@@ -32,3 +32,13 @@ output "ecs_tasks_security_group_id" {
   description = "Security Group ID for ECS tasks"
   value       = aws_security_group.ecs_tasks.id
 }
+
+output "alb_security_group_id" {
+  description = "Public ALB Security Group ID"
+  value       = aws_security_group.alb.id
+}
+
+output "alb_access_logs_bucket_id" {
+  description = "S3 Bucket ID for ALB Access Logs"
+  value       = aws_s3_bucket.alb_access_logs.id
+}

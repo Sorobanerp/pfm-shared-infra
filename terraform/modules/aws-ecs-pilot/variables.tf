@@ -19,3 +19,15 @@ variable "private_subnet_ids" {
   type        = list(string)
   default     = []
 }
+
+variable "public_subnet_ids" {
+  description = "List of public subnet IDs for public ALB"
+  type        = list(string)
+  default     = []
+}
+
+variable "kms_master_key_arn" {
+  description = "KMS Master Key ARN for encrypting ALB access logs bucket"
+  type        = string
+  default     = ""
+}
