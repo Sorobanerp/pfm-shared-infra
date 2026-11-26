@@ -61,7 +61,7 @@ resource "aws_ecs_cluster_capacity_providers" "pfm_pilot" {
 }
 
 resource "aws_security_group" "alb" {
-  name        = "pfm-alb-public-sg-${var.environment}"
+  name_prefix = "pfm-alb-public-sg-${var.environment}-"
   description = "Public ALB Security Group exposing only TCP 80 (HTTP->HTTPS 301 redirect) and TCP 443"
   vpc_id      = var.vpc_id
 
@@ -91,6 +91,10 @@ resource "aws_security_group" "alb" {
     cidr_blocks = [var.vpc_cidr]
   }
 
+  lifecycle {
+    create_before_destroy = true
+  }
+
   tags = {
     Name        = "pfm-alb-public-sg-${var.environment}"
     Environment = var.environment
@@ -100,7 +104,7 @@ resource "aws_security_group" "alb" {
 
 resource "aws_security_group" "ecs_tasks" {
   name        = "pfm-ecs-tasks-sg-${var.environment}"
-  description = "Security Group for ECS Fargate Spot tasks (ingress strictly from ALB SG and self Service Connect)"
+  description = "Security Group for ECS Fargate Spot tasks (least-privilege east-west and egress)"
   vpc_id      = var.vpc_id
 
   # Ingress: North-South traffic exclusively from the Public ALB Security Group (zero 0.0.0.0/0)
@@ -158,6 +162,10 @@ resource "aws_security_group" "ecs_tasks" {
     self        = true
   }
 
+  lifecycle {
+    create_before_destroy = true
+  }
+
   tags = {
     Name        = "pfm-ecs-tasks-sg-${var.environment}"
     Environment = var.environment
@@ -178,16 +186,58 @@ resource "aws_s3_bucket" "alb_access_logs" {
   }
 }
 
-# trivy:ignore:AVD-AWS-0132 ALB access logs require AES256 or KMS; uses KMS when kms_master_key_arn is provided
+data "aws_elb_service_account" "main" {}
+
+data "aws_caller_identity" "current" {}
+
+# trivy:ignore:AVD-AWS-0132 AWS ALB access logs delivery requires SSE-S3 (AES256)
 resource "aws_s3_bucket_server_side_encryption_configuration" "alb_access_logs" {
   bucket = aws_s3_bucket.alb_access_logs.id
 
   rule {
     apply_server_side_encryption_by_default {
-      kms_master_key_id = var.kms_master_key_arn != "" ? var.kms_master_key_arn : null
-      sse_algorithm     = var.kms_master_key_arn != "" ? "aws:kms" : "AES256"
+      sse_algorithm = "AES256"
     }
   }
+}
+
+data "aws_iam_policy_document" "alb_access_logs_bucket" {
+  statement {
+    sid     = "AllowELBAccessLogsDelivery"
+    effect  = "Allow"
+    actions = ["s3:PutObject"]
+    principals {
+      type        = "AWS"
+      identifiers = [data.aws_elb_service_account.main.arn]
+    }
+    resources = ["${aws_s3_bucket.alb_access_logs.arn}/alb/AWSLogs/${data.aws_caller_identity.current.account_id}/*"]
+  }
+
+  statement {
+    sid     = "DenyInsecureTransport"
+    effect  = "Deny"
+    actions = ["s3:*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    resources = [
+      aws_s3_bucket.alb_access_logs.arn,
+      "${aws_s3_bucket.alb_access_logs.arn}/*"
+    ]
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "alb_access_logs" {
+  bucket = aws_s3_bucket.alb_access_logs.id
+  policy = data.aws_iam_policy_document.alb_access_logs_bucket.json
+
+  depends_on = [aws_s3_bucket_public_access_block.alb_access_logs]
 }
 
 resource "aws_s3_bucket_versioning" "alb_access_logs" {
@@ -243,6 +293,8 @@ resource "aws_lb" "public" {
     Environment = var.environment
     ManagedBy   = "OpenTofu"
   }
+
+  depends_on = [aws_s3_bucket_policy.alb_access_logs]
 }
 
 resource "aws_lb_listener" "http_80_redirect" {
