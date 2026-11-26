@@ -344,8 +344,15 @@ resource "aws_s3_bucket_policy" "cloudtrail_audit" {
   policy = data.aws_iam_policy_document.cloudtrail_audit_bucket.json
 }
 
+variable "enable_cloudtrail_trail" {
+  description = "Enable AWS CloudTrail resource creation (false when managed at AWS Organization/Account console level outside OIDC deploy role)"
+  type        = bool
+  default     = false
+}
+
 # trivy:ignore:AVD-AWS-0162 FinOps ADR-010 Zero-CloudWatch policy: CloudTrail logs are stored in KMS-encrypted S3 with log file validation
 resource "aws_cloudtrail" "pfm_governance" {
+  count                         = var.enable_cloudtrail_trail ? 1 : 0
   name                          = "pfm-governance-trail-${var.environment}"
   s3_bucket_name                = aws_s3_bucket.cloudtrail_audit.id
   include_global_service_events = true
@@ -374,7 +381,7 @@ output "kms_master_key_id" {
 
 output "cloudtrail_arn" {
   description = "ARN of the PFM governance AWS CloudTrail"
-  value       = aws_cloudtrail.pfm_governance.arn
+  value       = try(aws_cloudtrail.pfm_governance[0].arn, "")
 }
 
 output "github_actions_oidc_trust_policy_json" {
