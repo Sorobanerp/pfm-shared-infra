@@ -64,7 +64,7 @@ resource "aws_db_subnet_group" "core_ledger" {
 }
 
 resource "aws_security_group" "rds_core_ledger" {
-  name        = "pfm-core-ledger-rds-sg-${var.environment}"
+  name_prefix = "pfm-core-ledger-rds-sg-${var.environment}-"
   description = "Restrict PostgreSQL 5432 access exclusively to ECS Tasks Security Group"
   vpc_id      = var.vpc_id
 
@@ -82,6 +82,10 @@ resource "aws_security_group" "rds_core_ledger" {
     to_port         = 0
     protocol        = "-1"
     security_groups = var.ecs_tasks_security_group_id != "" ? [var.ecs_tasks_security_group_id] : []
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 
   tags = merge(local.common_tags, {
@@ -136,7 +140,7 @@ resource "aws_elasticache_subnet_group" "cache" {
 
 resource "aws_security_group" "cache" {
   name        = "pfm-cache-sg-${var.environment}"
-  description = "Restrict Valkey/Redis 6379 access exclusively to ECS Tasks Security Group"
+  description = "Restrict Valkey/Redis 6379 access exclusively to PFM VPC CIDR"
   vpc_id      = var.vpc_id
 
   ingress {
@@ -153,6 +157,10 @@ resource "aws_security_group" "cache" {
     to_port         = 0
     protocol        = "-1"
     security_groups = var.ecs_tasks_security_group_id != "" ? [var.ecs_tasks_security_group_id] : []
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 
   tags = merge(local.common_tags, {

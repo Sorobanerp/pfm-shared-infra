@@ -327,6 +327,11 @@ output "ecs_tasks_security_group_id" {
   value       = module.ecs_pilot.ecs_tasks_security_group_id
 }
 
+output "alb_dns_name" {
+  description = "Public ALB DNS Name (HTTP 80 -> 301 HTTPS 443)"
+  value       = module.ecs_pilot.alb_dns_name
+}
+
 output "service_discovery_namespace_id" {
   description = "Cloud Map / Service Connect Namespace ID"
   value       = module.ecs_pilot.cloud_map_namespace_id
