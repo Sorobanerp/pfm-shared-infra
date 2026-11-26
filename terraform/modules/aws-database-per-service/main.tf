@@ -68,22 +68,6 @@ resource "aws_security_group" "rds_core_ledger" {
   description = "Restrict PostgreSQL 5432 access exclusively to ECS Tasks Security Group"
   vpc_id      = var.vpc_id
 
-  ingress {
-    description     = "PostgreSQL 5432 access exclusively from ECS Fargate Tasks Security Group"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = var.ecs_tasks_security_group_id != "" ? [var.ecs_tasks_security_group_id] : []
-  }
-
-  egress {
-    description     = "Allow responses exclusively to ECS Fargate Tasks Security Group"
-    from_port       = 0
-    to_port         = 0
-    protocol        = "-1"
-    security_groups = var.ecs_tasks_security_group_id != "" ? [var.ecs_tasks_security_group_id] : []
-  }
-
   lifecycle {
     create_before_destroy = true
   }
@@ -91,6 +75,24 @@ resource "aws_security_group" "rds_core_ledger" {
   tags = merge(local.common_tags, {
     Name = "pfm-core-ledger-rds-sg-${var.environment}"
   })
+}
+
+resource "aws_vpc_security_group_ingress_rule" "rds_core_ledger_from_ecs" {
+  count                        = var.ecs_tasks_security_group_id != "" ? 1 : 0
+  security_group_id            = aws_security_group.rds_core_ledger.id
+  description                  = "PostgreSQL 5432 access exclusively from ECS Fargate Tasks Security Group"
+  from_port                    = 5432
+  to_port                      = 5432
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = var.ecs_tasks_security_group_id
+}
+
+resource "aws_vpc_security_group_egress_rule" "rds_core_ledger_to_ecs" {
+  count                        = var.ecs_tasks_security_group_id != "" ? 1 : 0
+  security_group_id            = aws_security_group.rds_core_ledger.id
+  description                  = "Allow responses exclusively to ECS Fargate Tasks Security Group"
+  ip_protocol                  = "-1"
+  referenced_security_group_id = var.ecs_tasks_security_group_id
 }
 
 resource "aws_db_instance" "core_ledger" {
@@ -143,22 +145,6 @@ resource "aws_security_group" "cache" {
   description = "Restrict Valkey/Redis 6379 access exclusively to PFM VPC CIDR"
   vpc_id      = var.vpc_id
 
-  ingress {
-    description     = "Valkey/Redis 6379 access exclusively from ECS Fargate Tasks Security Group"
-    from_port       = 6379
-    to_port         = 6379
-    protocol        = "tcp"
-    security_groups = var.ecs_tasks_security_group_id != "" ? [var.ecs_tasks_security_group_id] : []
-  }
-
-  egress {
-    description     = "Allow responses exclusively to ECS Fargate Tasks Security Group"
-    from_port       = 0
-    to_port         = 0
-    protocol        = "-1"
-    security_groups = var.ecs_tasks_security_group_id != "" ? [var.ecs_tasks_security_group_id] : []
-  }
-
   lifecycle {
     create_before_destroy = true
   }
@@ -166,6 +152,24 @@ resource "aws_security_group" "cache" {
   tags = merge(local.common_tags, {
     Name = "pfm-cache-sg-${var.environment}"
   })
+}
+
+resource "aws_vpc_security_group_ingress_rule" "cache_from_ecs" {
+  count                        = var.ecs_tasks_security_group_id != "" ? 1 : 0
+  security_group_id            = aws_security_group.cache.id
+  description                  = "Valkey/Redis 6379 access exclusively from ECS Fargate Tasks Security Group"
+  from_port                    = 6379
+  to_port                      = 6379
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = var.ecs_tasks_security_group_id
+}
+
+resource "aws_vpc_security_group_egress_rule" "cache_to_ecs" {
+  count                        = var.ecs_tasks_security_group_id != "" ? 1 : 0
+  security_group_id            = aws_security_group.cache.id
+  description                  = "Allow responses exclusively to ECS Fargate Tasks Security Group"
+  ip_protocol                  = "-1"
+  referenced_security_group_id = var.ecs_tasks_security_group_id
 }
 
 resource "aws_elasticache_replication_group" "cache" {
