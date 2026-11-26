@@ -1,0 +1,203 @@
+name: pfm-shared-infra-local-cloud
+
+networks:
+  pfm-cloud-net:
+    name: pfm-cloud-net
+    driver: bridge
+
+volumes:
+  pfm_localstack_data:
+  pfm_pg_core_ledger_data:
+  pfm_pg_ai_rules_data:
+  pfm_kafka_data:
+  pfm_valkey_data:
+
+services:
+  # =========================================================================
+  # 1. AWS Local Cloud Emulator (S3, KMS, SecretsManager, STS) — :4566 / :14566
+  # =========================================================================
+  localstack:
+    image: localstack/localstack:latest
+    container_name: pfm-localstack
+    ports:
+      - "4566:4566"
+      - "14566:4566"
+    environment:
+      - SERVICES=s3,kms,secretsmanager,sts
+      - DEFAULT_REGION=us-east-2
+      - AWS_DEFAULT_REGION=us-east-2
+      - EAGER_SERVICE_LOADING=1
+      - SKIP_SSL_CERT_DOWNLOAD=1
+    volumes:
+      - pfm_localstack_data:/var/lib/localstack
+      - ./local-cloud/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh:ro
+    networks:
+      - pfm-cloud-net
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://localhost:4566/_localstack/init/ready | grep -q '\"state\": \"SUCCESSFUL\"'"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+
+  # =========================================================================
+  # 2. Core Ledger PostgreSQL 16 + pgvector + RLS — :5432 / :15432
+  # =========================================================================
+  postgres-core-ledger:
+    image: pgvector/pgvector:pg16
+    container_name: postgres-core-ledger
+    ports:
+      - "5432:5432"
+      - "15432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=pfm_core_ledger
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - pfm_pg_core_ledger_data:/var/lib/postgresql/data
+      - ./local-cloud/init-db/init-pgvector.sql:/docker-entrypoint-initdb.d/01-init-pgvector.sql:ro
+    networks:
+      - pfm-cloud-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pfm_core_ledger"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  # =========================================================================
+  # 3. AI Rules & Embeddings PostgreSQL 16 — :15433
+  # =========================================================================
+  postgres-ai-rules:
+    image: pgvector/pgvector:pg16
+    container_name: postgres-ai-rules
+    ports:
+      - "15433:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=pfm_ai_rules
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - pfm_pg_ai_rules_data:/var/lib/postgresql/data
+      - ./local-cloud/init-db/init-pgvector.sql:/docker-entrypoint-initdb.d/01-init-pgvector.sql:ro
+    networks:
+      - pfm-cloud-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pfm_ai_rules"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  # =========================================================================
+  # 4. Event Streaming Backbone (Kafka / Redpanda-compatible) — :9092 / :19092
+  # =========================================================================
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: pfm-kafka
+    ports:
+      - "9092:9092"
+      - "19092:19092"
+    environment:
+      - KAFKA_NODE_ID=1
+      - KAFKA_PROCESS_ROLES=broker,controller
+      - KAFKA_LISTENERS=PLAINTEXT://:29092,CONTROLLER://:9093,EXTERNAL_STD://:9092,EXTERNAL_ALT://:19092
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:29092,EXTERNAL_STD://localhost:9092,EXTERNAL_ALT://localhost:19092
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL_STD:PLAINTEXT,EXTERNAL_ALT:PLAINTEXT
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+      - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
+      - KAFKA_NUM_PARTITIONS=6
+      - CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk
+    volumes:
+      - pfm_kafka_data:/var/lib/kafka/data
+    networks:
+      - pfm-cloud-net
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:29092 --list >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 15
+      start_period: 15s
+    restart: unless-stopped
+
+  # =========================================================================
+  # 5. Automatic Kafka Topic Bootstrapper
+  # =========================================================================
+  kafka-init:
+    image: apache/kafka:3.8.0
+    container_name: pfm-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for topic in statement.raw.extracted tx.categorized ledger.entry.committed tx.dlq; do
+          echo "Creating Kafka topic: $$topic"
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic "$$topic" --partitions 6 --replication-factor 1
+        done
+        echo "All PFM Kafka topics verified!"
+    networks:
+      - pfm-cloud-net
+    restart: "no"
+
+  # =========================================================================
+  # 6. Kafka / Redpanda Console Web UI — :8081 / :18085
+  # =========================================================================
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: pfm-kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8081:8080"
+      - "18085:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=pfm-local-cluster
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:29092
+      - DYNAMIC_CONFIG_ENABLED=true
+    networks:
+      - pfm-cloud-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 15s
+    restart: unless-stopped
+
+  # =========================================================================
+  # 7. In-Memory Projection Cache & Rate Limit: Valkey / Redis — :6379 / :16379
+  # =========================================================================
+  redis:
+    image: valkey/valkey:8.0-alpine
+    container_name: pfm-redis
+    ports:
+      - "6379:6379"
+      - "16379:6379"
+    command: ["valkey-server", "--appendonly", "yes", "--maxmemory", "1gb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - pfm_valkey_data:/data
+    networks:
+      - pfm-cloud-net
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped

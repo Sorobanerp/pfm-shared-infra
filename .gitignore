@@ -12,3 +12,11 @@ terraform.rc
 .DS_Store
 .env
 __pycache__/
+
+# Local environment files (untracked)
+.env
+.env.local
+.env.*.local
+!.env.example
+!.env.local.example
+logs/

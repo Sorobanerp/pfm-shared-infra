@@ -2,6 +2,15 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS "vector";
 
+-- Restricted application role for pfm-core-ledger-java (NOBYPASSRLS)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pfm_app_user') THEN
+        CREATE ROLE pfm_app_user WITH LOGIN PASSWORD 'pfm_app_secret_2026' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+    END IF;
+END
+$$;
+
 -- Restricted application role for pfm-ai-worker-python (NOBYPASSRLS)
 DO $$
 BEGIN
@@ -33,4 +42,5 @@ CREATE POLICY rls_learned_merchant_rules_isolation ON learned_merchant_rules
     WITH CHECK (tenant_id = NULLIF(BTRIM(current_setting('app.current_tenant_id', true)), ''));
 
 GRANT USAGE ON SCHEMA public TO pfm_ai_user;
+GRANT USAGE ON SCHEMA public TO pfm_app_user;
 GRANT SELECT, INSERT, UPDATE, DELETE ON learned_merchant_rules TO pfm_ai_user;
