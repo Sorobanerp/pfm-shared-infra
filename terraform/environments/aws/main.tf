@@ -229,6 +229,19 @@ resource "aws_secretsmanager_secret_version" "upstash_redis" {
   secret_string = var.upstash_redis_url != "" ? var.upstash_redis_url : "rediss://default:mock@mock-upstash-redis.internal:6379"
 }
 
+resource "aws_secretsmanager_secret" "datadog_api_key" {
+  name_prefix             = "pfm/datadog/api-key-"
+  description             = "Datadog API Key for Unified Service Tagging & OpenTelemetry OTLP (ADR-010)"
+  kms_key_id              = module.security_kms.kms_master_key_id
+  recovery_window_in_days = 0
+
+  tags = {
+    Environment = var.environment
+    ManagedBy   = "OpenTofu"
+    ADR         = "ADR-010"
+  }
+}
+
 # =============================================================================
 # Compute: Amazon ECS Fargate Spot & Cloud Map Pilot (ADR-008)
 # =============================================================================
@@ -386,4 +399,10 @@ output "upstash_redis_secret_arn" {
   description = "Secrets Manager ARN for Upstash Redis Serverless"
   sensitive   = true
   value       = aws_secretsmanager_secret.upstash_redis.arn
+}
+
+output "datadog_api_key_secret_arn" {
+  description = "Secrets Manager ARN for Datadog API Key (Plug-and-Play ADR-010)"
+  sensitive   = true
+  value       = aws_secretsmanager_secret.datadog_api_key.arn
 }
