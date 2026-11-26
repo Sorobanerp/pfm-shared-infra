@@ -62,7 +62,7 @@ resource "aws_ecs_cluster_capacity_providers" "pfm_pilot" {
 
 resource "aws_security_group" "alb" {
   name_prefix = "pfm-alb-public-sg-${var.environment}-"
-  description = "Public ALB Security Group exposing only TCP 80 (HTTP->HTTPS 301 redirect) and TCP 443"
+  description = "Public ALB Security Group exposing only TCP 80 (HTTP to HTTPS 301 redirect) and TCP 443"
   vpc_id      = var.vpc_id
 
   # trivy:ignore:AVD-AWS-0107 Public internet-facing ALB requires 80 (strictly for 301 redirect to 443) and 443
