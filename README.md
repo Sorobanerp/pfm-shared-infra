@@ -8,7 +8,7 @@
 
 ## 1. Visão Geral & Papel na Arquitetura
 
-Provisiona a infraestrutura compartilhada base em AWS `us-east-2`: **VPC**, Cluster **ECS Fargate Spot (`pfm-pilot-prod`)**, **Service Connect (`pfm.internal`)**, **RDS PostgreSQL 16**, **S3 Criptografado KMS**, **Secrets Manager Upstash Kafka/Redis**, **AWS KMS** e **EKS condicional (`compute_engine`)** + ambiente `local-cloud/`.
+Provisiona a infraestrutura compartilhada base em AWS `us-east-2`: **VPC**, Cluster **ECS Fargate Spot (`pfm-ecs-pilot`)**, **Service Connect (`pfm.internal`)**, **RDS PostgreSQL 16 (`pfm-core-ledger-prod`)**, **S3 Criptografado KMS**, **Secrets Manager Upstash Kafka/Redis**, **AWS KMS** e **EKS condicional (`compute_engine`)** + ambiente `local-cloud/`.
 
 - **Repositório:** `Sorobanerp/pfm-shared-infra`
 - **Vínculo com `pfm-docs`:** `ADR-006, ADR-007, ADR-008, ADR-010 | US-01, US-15`
@@ -66,7 +66,41 @@ trivy config --severity CRITICAL,HIGH --exit-code 1 terraform/
 
 1. Fluxo Gitflow: `feat/*` $\rightarrow$ `develop` $\rightarrow$ `release/vX.Y.Z` $\rightarrow$ `main` (com GMUD).
 2. O pipeline `infra-opentofu-ci-cd.yml` realiza backup `last-good` no S3, executa `tofu apply` via OIDC e possui rollback automático em caso de falha.
-3. Validação pós-deploy: `aws ecs describe-clusters --clusters pfm-pilot-prod --region us-east-2`.
+3. Validação pós-deploy: `aws ecs describe-clusters --clusters pfm-ecs-pilot --region us-east-2`.
+
+---
+
+## 6. Checklist Não-Destrutivo de Limpeza de Recursos Órfãos (Security Groups Residuais)
+
+Para auditar e higienizar recursos residuais (ex.: Security Groups órfãos de recriações `create_before_destroy` ou testes legados) **sem executar chamadas destrutivas automáticas na AWS**:
+
+```bash
+# 1. Listar todos os Security Groups da VPC do projeto (somente leitura)
+aws ec2 describe-security-groups \
+  --region us-east-2 \
+  --filters "Name=tag:Project,Values=pfm-platform,PFM-Core-Banking" \
+  --query 'SecurityGroups[*].{GroupId:GroupId,GroupName:GroupName,VpcId:VpcId}' \
+  --output table
+
+# 2. Verificar se o Security Group candidato possui alguma ENI anexada (deve retornar vazio antes de qualquer remoção manual)
+aws ec2 describe-network-interfaces \
+  --region us-east-2 \
+  --filters "Name=group-id,Values=<SG_CANDIDATO_ID>" \
+  --query 'NetworkInterfaces[*].{ENI:NetworkInterfaceId,Status:Status,Description:Description}' \
+  --output table
+
+# 3. Verificar se algum outro Security Group referencia o SG candidato em regras de Ingress/Egress
+aws ec2 describe-security-groups \
+  --region us-east-2 \
+  --filters "Name=ip-permission.group-id,Values=<SG_CANDIDATO_ID>" \
+  --query 'SecurityGroups[*].{ReferencingGroupId:GroupId,ReferencingGroupName:GroupName}' \
+  --output table
+
+# 4. Confirmar que o SG candidato não consta no state ativo do OpenTofu
+tofu -chdir=terraform/environments/aws state list | grep security_group
+```
+
+> **Regra de Governança (`US-INFRA-01`):** A remoção de qualquer Security Group residual só deve ser executada via GMUD manual após confirmar `0` ENIs anexadas, `0` referências cruzadas e ausência no `terraform.tfstate`.
 
 Consulte [CONTRIBUTING.md](CONTRIBUTING.md) para regras de Conventional Commits e [CHANGELOG.md](CHANGELOG.md) para histórico de versões.
 
