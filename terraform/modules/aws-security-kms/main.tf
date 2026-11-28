@@ -1,25 +1,3 @@
-terraform {
-  required_version = ">= 1.8.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.70"
-    }
-  }
-}
-
-variable "environment" {
-  description = "Deployment environment identifier"
-  type        = string
-  default     = "prod"
-}
-
-variable "alias_name" {
-  description = "KMS key alias name"
-  type        = string
-  default     = "alias/pfm-master-key"
-}
-
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
@@ -116,6 +94,13 @@ data "aws_iam_policy_document" "kms_master" {
 locals {
   allowed_github_oidc_subjects = [
     "repo:Sorobanerp/pfm-shared-infra:ref:refs/heads/main",
+    "repo:Sorobanerp/pfm-shared-infra:ref:refs/heads/develop",
+    "repo:Sorobanerp/pfm-core-ledger-infra:ref:refs/heads/develop",
+    "repo:Sorobanerp/pfm-ingestion-bff-infra:ref:refs/heads/develop",
+    "repo:Sorobanerp/pfm-forecast-engine-infra:ref:refs/heads/develop",
+    "repo:Sorobanerp/pfm-ai-worker-infra:ref:refs/heads/develop",
+    "repo:Sorobanerp/pfm-web-infra:ref:refs/heads/develop",
+    "repo:Sorobanerp/pfm-finops-manager-infra:ref:refs/heads/develop",
     "repo:Sorobanerp/pfm-shared-infra:environment:production",
     "repo:Sorobanerp/pfm-ingestion-bff-infra:ref:refs/heads/main",
     "repo:Sorobanerp/pfm-ingestion-bff-infra:environment:production",
@@ -344,12 +329,6 @@ resource "aws_s3_bucket_policy" "cloudtrail_audit" {
   policy = data.aws_iam_policy_document.cloudtrail_audit_bucket.json
 }
 
-variable "enable_cloudtrail_trail" {
-  description = "Enable AWS CloudTrail resource creation (false when managed at AWS Organization/Account console level outside OIDC deploy role)"
-  type        = bool
-  default     = false
-}
-
 # trivy:ignore:AVD-AWS-0162 FinOps ADR-010 Zero-CloudWatch policy: CloudTrail logs are stored in KMS-encrypted S3 with log file validation
 resource "aws_cloudtrail" "pfm_governance" {
   count                         = var.enable_cloudtrail_trail ? 1 : 0
@@ -367,29 +346,4 @@ resource "aws_cloudtrail" "pfm_governance" {
   }
 
   depends_on = [aws_s3_bucket_policy.cloudtrail_audit]
-}
-
-output "kms_master_key_arn" {
-  description = "ARN of the PFM master KMS key"
-  value       = aws_kms_key.master.arn
-}
-
-output "kms_master_key_id" {
-  description = "ID of the PFM master KMS key"
-  value       = aws_kms_key.master.key_id
-}
-
-output "cloudtrail_arn" {
-  description = "ARN of the PFM governance AWS CloudTrail"
-  value       = try(aws_cloudtrail.pfm_governance[0].arn, "")
-}
-
-output "github_actions_oidc_trust_policy_json" {
-  description = "Least-privilege GitHub Actions OIDC trust policy JSON (Sorobanerp/pfm-* on refs/heads/main)"
-  value       = data.aws_iam_policy_document.github_actions_oidc_trust.json
-}
-
-output "tfstate_bucket_guardrail_policy_json" {
-  description = "Bucket policy JSON denying DeleteBucket/DeleteObject on OpenTofu state bucket"
-  value       = data.aws_iam_policy_document.tfstate_bucket_guardrail.json
 }

@@ -1,46 +1,3 @@
-terraform {
-  required_version = ">= 1.8.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.70"
-    }
-  }
-}
-
-variable "environment" {
-  description = "Deployment environment identifier"
-  type        = string
-  default     = "prod"
-}
-
-variable "vpc_id" {
-  description = "VPC ID where database and cache security groups are created"
-  type        = string
-}
-
-variable "vpc_cidr" {
-  description = "VPC CIDR block allowed to reach PostgreSQL and Valkey/Redis"
-  type        = string
-  default     = "10.20.0.0/16"
-}
-
-variable "private_subnet_ids" {
-  description = "Private subnet IDs for RDS and ElastiCache subnet groups"
-  type        = list(string)
-}
-
-variable "kms_master_key_arn" {
-  description = "KMS Master Key ARN for storage and encryption at rest"
-  type        = string
-}
-
-variable "ecs_tasks_security_group_id" {
-  description = "ECS Tasks Security Group ID allowed to connect to PostgreSQL 5432 and Valkey 6379"
-  type        = string
-  default     = ""
-}
-
 locals {
   common_tags = {
     Environment = var.environment
@@ -99,7 +56,7 @@ resource "aws_db_instance" "core_ledger" {
   identifier                            = "pfm-core-ledger-${var.environment}"
   engine                                = "postgres"
   engine_version                        = "16.15"
-  instance_class                        = "db.t4g.micro"
+  instance_class                        = var.db_instance_class
   allocated_storage                     = 20
   max_allocated_storage                 = 50
   storage_type                          = "gp3"
@@ -192,19 +149,4 @@ resource "aws_elasticache_replication_group" "cache" {
     Name    = "pfm-forecast-valkey-${var.environment}"
     Service = "pfm-forecast-engine-go"
   })
-}
-
-output "rds_endpoint" {
-  description = "PostgreSQL RDS endpoint for pfm_core_ledger"
-  value       = aws_db_instance.core_ledger.endpoint
-}
-
-output "rds_resource_id" {
-  description = "PostgreSQL RDS resource ID for IAM DB authentication"
-  value       = aws_db_instance.core_ledger.resource_id
-}
-
-output "redis_endpoint" {
-  description = "ElastiCache Valkey primary endpoint"
-  value       = aws_elasticache_replication_group.cache.primary_endpoint_address
 }

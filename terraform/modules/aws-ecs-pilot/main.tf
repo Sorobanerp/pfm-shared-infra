@@ -1,19 +1,3 @@
-# =============================================================================
-# Amazon ECS Fargate Spot & Cloud Map Service Connect Module (ADR-008 Pilot)
-# Fixed cost: ~US$ 0,00 idle cluster + ~US$ 11,50–24,00/mo Fargate Spot tasks
-# Eliminates US$ 73/mo EKS Control Plane while maintaining Graviton Arm64
-# =============================================================================
-
-terraform {
-  required_version = ">= 1.8.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = ">= 5.70"
-    }
-  }
-}
-
 resource "aws_service_discovery_private_dns_namespace" "pfm_internal" {
   name        = "pfm.internal"
   description = "Private DNS and Service Connect namespace for microservices gRPC & HTTP discovery"
@@ -28,7 +12,7 @@ resource "aws_service_discovery_private_dns_namespace" "pfm_internal" {
 }
 
 resource "aws_ecs_cluster" "pfm_pilot" {
-  name = "pfm-ecs-pilot"
+  name = var.cluster_name
 
   service_connect_defaults {
     namespace = aws_service_discovery_private_dns_namespace.pfm_internal.arn
