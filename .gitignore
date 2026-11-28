@@ -20,3 +20,4 @@ __pycache__/
 !.env.example
 !.env.local.example
 logs/
+!terraform/environments/*/terraform.tfvars

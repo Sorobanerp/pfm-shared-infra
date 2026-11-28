@@ -21,7 +21,7 @@ module "network" {
 module "security_kms" {
   source      = "../../modules/aws-security-kms"
   environment = var.environment
-  alias_name  = var.environment == "prod" ? "alias/pfm-master-key" : "alias/pfm-master-key-${var.environment}"
+  alias_name  = "alias/pfm-master-key-${var.environment}"
 }
 
 module "database_per_service" {

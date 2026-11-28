@@ -214,7 +214,7 @@ resource "aws_kms_key" "master" {
 }
 
 resource "aws_kms_alias" "master" {
-  name          = var.alias_name
+  name          = endswith(var.alias_name, "-${var.environment}") ? var.alias_name : "${var.alias_name}-${var.environment}"
   target_key_id = aws_kms_key.master.key_id
 }
 

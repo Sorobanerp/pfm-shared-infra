@@ -1,5 +1,5 @@
 resource "aws_service_discovery_private_dns_namespace" "pfm_internal" {
-  name        = "pfm.internal"
+  name        = "pfm-${var.environment}.internal"
   description = "Private DNS and Service Connect namespace for microservices gRPC & HTTP discovery"
   vpc         = var.vpc_id
 
@@ -12,7 +12,7 @@ resource "aws_service_discovery_private_dns_namespace" "pfm_internal" {
 }
 
 resource "aws_ecs_cluster" "pfm_pilot" {
-  name = var.cluster_name
+  name = endswith(var.cluster_name, "-${var.environment}") ? var.cluster_name : "${var.cluster_name}-${var.environment}"
 
   service_connect_defaults {
     namespace = aws_service_discovery_private_dns_namespace.pfm_internal.arn
@@ -24,7 +24,7 @@ resource "aws_ecs_cluster" "pfm_pilot" {
   }
 
   tags = {
-    Name         = "pfm-ecs-pilot"
+    Name         = "pfm-ecs-pilot-${var.environment}"
     Environment  = var.environment
     ManagedBy    = "OpenTofu"
     FinOpsTier   = "Pilot-3-Months"
